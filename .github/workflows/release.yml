@@ -64,14 +64,14 @@ jobs:
         run: |
             pip install ruamel.yaml wheel
             pip install homeassistant
-            python blueprint_generator.py || true
+            python blueprint/blueprint_generator.py || true
 
       - name: Commit bluepint
         id: commit_blueprint
         # We may skip this if blueprint was not updated
         # No type: it may be "feat" or "fix" version changes, and we don't know what exact we should use
         run: |
-           git commit -m "blueprint update" blueprint.yaml || true
+           git commit -m "chore(blueprint): update blueprints" blueprint/*.yaml || true
 
       - name: Update
         id: update_tag
