@@ -57,7 +57,7 @@ jobs:
         id: commit_version
         # No type: it may be "feat" or "fix" version changes, and we don't know what exact we should use
         run: |
-          git commit -m "version update" custom_components/sleep_as_android/manifest.json
+          git commit -m "chore(release): ${{ needs.changes.outputs.tag }}" custom_components/sleep_as_android/manifest.json
           
       - name: Update blueprint
         id: update_blueprint
