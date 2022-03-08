@@ -1,7 +1,10 @@
 """Sensor for Sleep as android states."""
 
+from abc import ABC, abstractmethod, abstractproperty
+from enum import Enum
 import json
 import logging
+from turtle import st
 from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity
@@ -53,22 +56,13 @@ async def async_setup_entry(
     return True
 
 
-class SleepAsAndroidSensor(SensorEntity, RestoreEntity):
-    """Sensor for the integration."""
+class SensorType(Enum):
+    STATE = 1
+    ALARMS = 2
 
-    __additional_attributes: dict[str, str] = {
-        "value1": "timestamp",
-        "value2": "label",
-    }
-    """Mapping for value*.
 
-    It is comfortable to have human readable names.
-    Keys is field names from SleepAsAndroid event https://docs.sleep.urbandroid.org/services/automation.html#events
-    Values is sensor attributes.
-    """
-    _attr_icon = "mdi:sleep"
-    _attr_should_poll = False
-    _attr_device_class = f"{DOMAIN}__status"
+class SleepAsAndroidBaseSensor(SensorEntity, RestoreEntity, ABC):
+    """Abstract base class for sensors."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, name: str):
         """Initialize entry."""
@@ -120,30 +114,6 @@ class SleepAsAndroidSensor(SensorEntity, RestoreEntity):
         """
         # ToDo: should we remove device?
         pass
-
-    def process_message(self, msg):
-        """Process new MQTT messages.
-
-        Set sensor state, attributes and fire events.
-
-        :param msg: MQTT message
-        """
-        _LOGGER.debug(f"Processing message {msg}")
-        try:
-            new_state = STATE_UNKNOWN
-            payload = json.loads(msg.payload)
-            try:
-                new_state = payload["event"]
-            except KeyError:
-                _LOGGER.warning("Got unexpected payload: '%s'", payload)
-
-            self._set_attributes(payload)
-            self.state = new_state
-            self._fire_event(self.state)
-            self._fire_trigger(self.state)
-
-        except json.decoder.JSONDecodeError:
-            _LOGGER.warning("expected JSON payload. got '%s' instead", msg.payload)
 
     @property
     def name(self):
@@ -197,6 +167,86 @@ class SleepAsAndroidSensor(SensorEntity, RestoreEntity):
         }
         return info
 
+    @property
+    @abstractmethod
+    def __additional_attributes(self) -> dict[str, str]:
+        pass
+
+    @abstractmethod
+    def process_message(self, msg):
+        pass
+
+    def _set_attributes(self, payload: dict):
+        new_attributes = {}
+        for k, v in self.__additional_attributes.items():
+            new_attributes[v] = payload.get(k, STATE_UNAVAILABLE)
+        _LOGGER.debug(f"New attributes is {new_attributes}")
+        return self._attr_extra_state_attributes.update(new_attributes)
+
+
+class SleepAsAndroidSensor(SleepAsAndroidBaseSensor):
+    """Sensor for the integration."""
+
+    """Mapping for value*.
+
+    It is comfortable to have human readable names.
+    Keys is field names from SleepAsAndroid event https://docs.sleep.urbandroid.org/services/automation.html#events
+    Values is sensor attributes.
+    """
+    _attr_icon = "mdi:sleep"
+    _attr_should_poll = False
+    _attr_device_class = f"{DOMAIN}__status"
+
+
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, name: str):
+        """Initialize entry."""
+        super().__init__(hass, config_entry, name)
+        # self._instance: SleepAsAndroidInstance = hass.data[DOMAIN][
+        #     config_entry.entry_id
+        # ]
+
+        # self.hass: HomeAssistant = hass
+
+        # self._name: str = name
+        # self._state: str = STATE_UNKNOWN
+        # self._device_id: str = "unknown"
+        # self._attr_extra_state_attributes = {}
+        # self._set_attributes(
+        #     {}
+        # )  # initiate _attr_extra_state_attributes with empty values
+        # _LOGGER.debug(f"Creating sensor with name {name}")
+
+    @property
+    def __additional_attributes(self) -> dict[str, str]:
+        return {
+            "value1": "timestamp",
+            "value2": "label",
+        }
+
+    def process_message(self, msg):
+        """Process new MQTT messages.
+
+        Set sensor state, attributes and fire events.
+
+        :param msg: MQTT message
+        """
+        _LOGGER.debug(f"Processing message {msg}")
+        try:
+            new_state = STATE_UNKNOWN
+            payload = json.loads(msg.payload)
+            try:
+                new_state = payload["event"]
+            except KeyError:
+                _LOGGER.warning("Got unexpected payload: '%s'", payload)
+
+            self._set_attributes(payload)
+            self.state = new_state
+            self._fire_event(self.state)
+            self._fire_trigger(self.state)
+
+        except json.decoder.JSONDecodeError:
+            _LOGGER.warning("expected JSON payload. got '%s' instead", msg.payload)
+
     def _fire_event(self, event_payload: str):
         """Fire event with payload {'event': event_payload}.
 
@@ -221,10 +271,3 @@ class SleepAsAndroidSensor(SensorEntity, RestoreEntity):
                 "trigger!",
                 new_state,
             )
-
-    def _set_attributes(self, payload: dict):
-        new_attributes = {}
-        for k, v in self.__additional_attributes.items():
-            new_attributes[v] = payload.get(k, STATE_UNAVAILABLE)
-        _LOGGER.debug(f"New attributes is {new_attributes}")
-        return self._attr_extra_state_attributes.update(new_attributes)

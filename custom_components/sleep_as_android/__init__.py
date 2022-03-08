@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import cache, cached_property
 import logging
 import re
-from typing import Callable
+from typing import Callable, Tuple
 
 from awesomeversion import AwesomeVersion
 from homeassistant.components.mqtt import subscription
@@ -17,7 +17,8 @@ from homeassistant.helpers import entity_registry as er
 from pyhaversion import HaVersion
 
 from .const import DEVICE_MACRO, DOMAIN
-from .sensor import SleepAsAndroidSensor
+from .sensor import SleepAsAndroidBaseSensor, SleepAsAndroidSensor, SensorType
+from .alarm_sensor import SleepAsAndroidAlarmSensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class SleepAsAndroidInstance:
         """Initialize entry."""
         self.hass = hass
         self._config_entry = config_entry
-        self.__sensors: dict[str, SleepAsAndroidSensor] = {}
+        self.__sensors: dict[str, SleepAsAndroidBaseSensor] = {}
         self._entity_registry: er = registry
         self._subscription_state = None
         self._ha_version: AwesomeVersion | None = None
@@ -220,6 +221,23 @@ class SleepAsAndroidInstance:
         self._subscription_state = None
 
         @callback
+        def alarms_received(msg):
+            """Handle new MQTT alarm messages."""
+
+            _LOGGER.debug("Got message %s", msg)
+            device_name = self.device_name_from_topic(msg.topic)
+            entity_id = f'{self.create_entity_id(device_name)}_alarms'
+            _LOGGER.debug(f"alarm sensor entity_id is {entity_id}")
+
+            (target_sensor, is_new) = self.get_sensor(device_name, SensorType.ALARMS)
+            if is_new:
+                async_add_entities([target_sensor], True)
+            try:
+                target_sensor.process_message(msg)
+            except NoEntitySpecifiedError:
+                pass
+
+        @callback
         def message_received(msg):
             """Handle new MQTT messages."""
 
@@ -228,7 +246,7 @@ class SleepAsAndroidInstance:
             entity_id = self.create_entity_id(device_name)
             _LOGGER.debug(f"sensor entity_id is {entity_id}")
 
-            (target_sensor, is_new) = self.get_sensor(device_name)
+            (target_sensor, is_new) = self.get_sensor(device_name, SensorType.STATE)
             if is_new:
                 async_add_entities([target_sensor], True)
             try:
@@ -265,7 +283,12 @@ class SleepAsAndroidInstance:
                 "topic": self.topic_template,
                 "msg_callback": message_received,
                 "qos": self._config_entry.data["qos"],
-            }
+            },
+            "alarm_topic": {
+                "topic": f"{self.topic_template}/alarms",
+                "msg_callback": alarms_received,
+                "qos": self._config_entry.data["qos"],
+            },
         }
 
         if self._ha_version is None:
@@ -288,7 +311,7 @@ class SleepAsAndroidInstance:
         else:
             _LOGGER.critical(f"Could not subscribe to topic {self.topic_template}")
 
-    def get_sensor(self, sensor_name: str) -> (SleepAsAndroidSensor, bool):
+    def get_sensor(self, sensor_name: str, type: SensorType) -> Tuple[SleepAsAndroidBaseSensor, bool]:
         """Get sensor by it's name.
 
         If we have no such key in __sensors -- create new sensor
@@ -301,9 +324,12 @@ class SleepAsAndroidInstance:
             return self.__sensors[sensor_name], False
         except KeyError:
             _LOGGER.info("New device! Let's create sensor for %s", sensor_name)
-            new_sensor = SleepAsAndroidSensor(
-                self.hass, self._config_entry, sensor_name
-            )
+            if type == SensorType.STATE:
+                new_sensor = SleepAsAndroidSensor(
+                    self.hass, self._config_entry, sensor_name
+                )
+            elif type == SensorType.ALARMS:
+                new_sensor = SleepAsAndroidAlarmSensor(self.hass, self._config_entry, sensor_name)
             self.__sensors[sensor_name] = new_sensor
             return new_sensor, True
 
