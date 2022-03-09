@@ -71,6 +71,7 @@ class SleepAsAndroidAlarmSensor:
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, name: str):
         """Initialize entry."""
         super().__init__(hass, config_entry, name)
+        self._alarms = []
 
     @property
     def __additional_attributes(self) -> dict[str, str]:
@@ -99,9 +100,35 @@ class SleepAsAndroidAlarmSensor:
       """
       _LOGGER.debug('Processing message %s', msg)
       try:
-        new_state = STATE_UNKNOWN
+        new_alarms = []
         payload = json.loads(msg.payload)
         try:
-          new_state = payload[""]
+            new_alarms = [AlarmModel(alarmData) for alarmData in payload]
+        except KeyError:
+            _LOGGER.warning("Got unexpected payload: '%s'", payload)
+
+        self._set_attributes(payload)
+        self._alarms = new_alarms
+        self._fire_event(self._alarms)
+        self._fire_trigger(self._alarms)
       except json.decoder.JSONDecodeError:
         _LOGGER.warning("expected JSON payload. got '%s' instead", msg.payload)
+
+    def _fire_event(self, new_alarms: list[AlarmModel]):
+        """Fire alarms event with payload.
+
+        :param new_alarms: payload for event
+        """
+        payload = json.dumps(new_alarms)
+        _LOGGER.debug("Firing '%s' with payload: '%s'", self.name, payload)
+        self.hass.bus.fire(self.name, payload)
+
+    def _fire_trigger(self,  new_alarms: list[AlarmModel]):
+        """Fire trigger based on new alarms.
+
+        :param new_alarms: alarm triggers to fire
+        """
+        if new_alarms in TRIGGERS:
+            self.hass.bus.async_fire(DOMAIN + "_event", {"device_id": self.device_id, "type": new_alarms})
+        else:
+            _LOGGER.warning("Got %s event, but it is not in TRIGGERS list: will not fire this event for trigger!", new_alarms)
