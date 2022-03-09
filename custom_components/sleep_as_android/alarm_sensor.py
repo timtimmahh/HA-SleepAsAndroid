@@ -55,7 +55,7 @@ async def async_setup_entry(
     return True
 
 
-class SleepAsAndroidAlarmSensor:
+class SleepAsAndroidAlarmSensor(SleepAsAndroidBaseSensor):
     """Sensor for alarm integration."""
 
     """Mapping for value*.
@@ -92,27 +92,27 @@ class SleepAsAndroidAlarmSensor:
         }
 
     def process_message(self, msg):
-      """Process new MQTT messages for alarms.
+        """Process new MQTT messages for alarms.
 
-      Set sensor state, attributes and fire events.
+        Set sensor state, attributes and fire events.
 
-      :param msg: MQTT message
-      """
-      _LOGGER.debug('Processing message %s', msg)
-      try:
-        new_alarms = []
-        payload = json.loads(msg.payload)
+        :param msg: MQTT message
+        """
+        _LOGGER.debug("Processing message %s", msg)
         try:
-            new_alarms = [AlarmModel(alarmData) for alarmData in payload]
-        except KeyError:
-            _LOGGER.warning("Got unexpected payload: '%s'", payload)
+            new_alarms = []
+            payload = json.loads(msg.payload)
+            try:
+                new_alarms = [AlarmModel(alarmData) for alarmData in payload]
+            except KeyError:
+                _LOGGER.warning("Got unexpected payload: '%s'", payload)
 
-        self._set_attributes(payload)
-        self._alarms = new_alarms
-        self._fire_event(self._alarms)
-        self._fire_trigger(self._alarms)
-      except json.decoder.JSONDecodeError:
-        _LOGGER.warning("expected JSON payload. got '%s' instead", msg.payload)
+            self._set_attributes(payload)
+            self._alarms = new_alarms
+            self._fire_event(self._alarms)
+            self._fire_trigger(self._alarms)
+        except json.decoder.JSONDecodeError:
+            _LOGGER.warning("expected JSON payload. got '%s' instead", msg.payload)
 
     def _fire_event(self, new_alarms: list[AlarmModel]):
         """Fire alarms event with payload.
@@ -123,12 +123,17 @@ class SleepAsAndroidAlarmSensor:
         _LOGGER.debug("Firing '%s' with payload: '%s'", self.name, payload)
         self.hass.bus.fire(self.name, payload)
 
-    def _fire_trigger(self,  new_alarms: list[AlarmModel]):
+    def _fire_trigger(self, new_alarms: list[AlarmModel]):
         """Fire trigger based on new alarms.
 
         :param new_alarms: alarm triggers to fire
         """
         if new_alarms in TRIGGERS:
-            self.hass.bus.async_fire(DOMAIN + "_event", {"device_id": self.device_id, "type": new_alarms})
+            self.hass.bus.async_fire(
+                DOMAIN + "_event", {"device_id": self.device_id, "type": new_alarms}
+            )
         else:
-            _LOGGER.warning("Got %s event, but it is not in TRIGGERS list: will not fire this event for trigger!", new_alarms)
+            _LOGGER.warning(
+                "Got %s event, but it is not in TRIGGERS list: will not fire this event for trigger!",
+                new_alarms,
+            )

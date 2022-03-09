@@ -285,7 +285,7 @@ class SleepAsAndroidInstance:
                 "qos": self._config_entry.data["qos"],
             },
             "alarm_topic": {
-                "topic": f"{self.topic_template}/alarms",
+                "topic": f"{self.topic_template}/alarms/+",
                 "msg_callback": alarms_received,
                 "qos": self._config_entry.data["qos"],
             },
