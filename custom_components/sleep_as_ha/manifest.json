@@ -1,6 +1,6 @@
 {
-  "domain": "sleep_as_android",
-  "name": "Sleep As Android",
+  "domain": "sleep_as_ha",
+  "name": "Sleep As HA",
   "documentation": "https://github.com/IATkachenko/HA-SleepAsAndroid/wiki",
   "issue_tracker": "https://github.com/IATkachenko/HA-SleepAsAndroid/issues",
   "dependencies": ["mqtt"],
