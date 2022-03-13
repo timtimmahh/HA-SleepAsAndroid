@@ -31,7 +31,7 @@ from pyhaversion import HaVersion
 from .const import DEVICE_MACRO, DOMAIN
 
 from .sensor import SleepTrackerSensor
-from .sensor import SleepAlarmSensor, ALARM_SCHEMA, AlarmData
+from .binary_sensor import SleepAlarmSensor, AlarmData
 
 _LOGGER = logging.getLogger(__name__)
 

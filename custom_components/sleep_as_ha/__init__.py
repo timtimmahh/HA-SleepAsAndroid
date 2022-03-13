@@ -17,7 +17,6 @@ from homeassistant.helpers import entity_registry as er
 from pyhaversion import HaVersion
 
 from .const import DEVICE_MACRO, DOMAIN
-from .alarm_sensor import SleepAsAndroidAlarmSensor
 from .sleep_as_ha import SleepAsHAInstance
 
 _LOGGER = logging.getLogger(__name__)

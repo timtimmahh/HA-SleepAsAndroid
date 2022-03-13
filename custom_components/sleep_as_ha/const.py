@@ -1,7 +1,3 @@
-from enum import IntEnum, auto
-from .sleep import SleepTrackerSensor
-from .alarm import SleepAlarmSensor
-
 DOMAIN = "sleep_as_ha"
 DEVICE_MACRO: str = "%%%device%%%"
 
