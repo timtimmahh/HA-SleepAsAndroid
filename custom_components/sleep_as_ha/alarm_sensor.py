@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_registry import async_entries_for_config_entry
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .sensor import SleepAsAndroidSensor
+from .sensor import SleepAsAndroidSensor, SleepAsAndroidBaseSensor
 from .const import DOMAIN
 from .device_trigger import TRIGGERS
 

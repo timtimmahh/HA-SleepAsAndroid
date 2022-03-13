@@ -1,74 +1,51 @@
-"""Sleep As Android integration."""
 from __future__ import annotations
 
-from functools import cache, cached_property
 import logging
 import re
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Type
+from json import loads
 
-from awesomeversion import AwesomeVersion
-from homeassistant.components.mqtt import subscription
-from homeassistant.components.mqtt.subscription import EntitySubscription
+from abc import ABC, abstractmethod, abstractproperty
+from homeassistant.components.sensor import SensorEntity
+from functools import cache, cached_property
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import NoEntitySpecifiedError
-from homeassistant.helpers import entity_registry as er
-from pyhaversion import HaVersion
+from homeassistant.components.mqtt import subscription
 
+from homeassistant.components.mqtt.subscription import EntitySubscription
+
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+
+from homeassistant.core import HomeAssistant, callback
+
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+
+from homeassistant.helpers.entity_registry import async_entries_for_config_entry
+from homeassistant.exceptions import NoEntitySpecifiedError
+
+from homeassistant.helpers.restore_state import RestoreEntity
+from awesomeversion import AwesomeVersion
+
+from pyhaversion import HaVersion
 from .const import DEVICE_MACRO, DOMAIN
-from .sensor import SleepAsAndroidBaseSensor, SleepAsAndroidSensor, SensorType
-from .alarm_sensor import SleepAsAndroidAlarmSensor
+
+from .sensor import SleepTrackerSensor
+from .sensor import SleepAlarmSensor, ALARM_SCHEMA, AlarmData
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup(_hass: HomeAssistant, _config_entry: ConfigEntry):
-    """Set up the integration based on configuration.yaml."""
-    return True
-
-
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry):
-    """Set up the integration based on config_flow."""
-    _LOGGER.info("Setting up %s ", config_entry.entry_id)
-
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-
-    registry = await er.async_get_registry(hass)
-    hass.data[DOMAIN][config_entry.entry_id] = SleepAsAndroidInstance(
-        hass, config_entry, registry
-    )
-
-    hass.config_entries.async_setup_platforms(config_entry, [Platform.SENSOR])
-    config_entry.async_on_unload(config_entry.add_update_listener(async_update_options))
-    return True
-
-
-async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update options for entry that was configured via user interface."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Remove entry configured via user interface."""
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        entry, [Platform.SENSOR]
-    )
-    if unload_ok:
-        instance: SleepAsAndroidInstance = hass.data[DOMAIN].pop(entry.entry_id)
-        await instance.unsubscribe()
-    return unload_ok
-
-
-class SleepAsAndroidInstance:
+class SleepAsHAInstance:
     """Instance for MQTT communication."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, registry: er):
         """Initialize entry."""
         self.hass = hass
         self._config_entry = config_entry
-        self.__sensors: dict[str, SleepAsAndroidBaseSensor] = {}
+        self.__sleep_sensors: dict[str, SleepTrackerSensor] = {}
+        self.__alarm_sensors: dict[str, SleepAlarmSensor] = {}
+        # self.__sensors: dict[str, SleepSensorBase] = {}
         self._entity_registry: er = registry
         self._subscription_state = None
         self._ha_version: AwesomeVersion | None = None
@@ -76,9 +53,7 @@ class SleepAsAndroidInstance:
         try:
             self._name: str = self.get_from_config("name")
         except KeyError:
-            self._name = "SleepAsAndroid"
-
-        # ToDo prepare topic_template and other variables that should be defined one time.
+            self._name = "SleepAsHA"
 
     async def unsubscribe(self):
         """Unsubscribe from topics."""
@@ -174,7 +149,7 @@ class SleepAsAndroidInstance:
         try:
             _topic = self.get_from_config("topic_template")
         except KeyError:
-            _topic = "SleepAsAndroid/" + DEVICE_MACRO
+            _topic = "SleepAsHA/" + DEVICE_MACRO
             _LOGGER.warning(
                 "Could not find topic_template in configuration. Will use %s instead",
                 _topic,
@@ -188,7 +163,7 @@ class SleepAsAndroidInstance:
 
         Used to identify individual sensors.
 
-        :param device_name: name of device
+        param device_name: name of device
         :returns: id that may be used for searching sensor by entity_id in entity_registry
         """
         _LOGGER.debug(
@@ -200,7 +175,7 @@ class SleepAsAndroidInstance:
     def device_name_from_entity_id(self, entity_id: str) -> str:
         """Extract device name from entity_id.
 
-        :param entity_id: entity id that was generated by self.create_entity_id
+        param entity_id: entity id that was generated by self.create_entity_id
         :returns: pure device name
         """
         _LOGGER.debug(f"device_name_from_entity_id: entity_id='{entity_id}'")
@@ -220,23 +195,22 @@ class SleepAsAndroidInstance:
         )
         self._subscription_state = None
 
-        @callback
-        def alarms_received(msg):
-            """Handle new MQTT alarm messages."""
-
-            _LOGGER.debug("Got message %s", msg)
-            device_name = self.device_name_from_topic(msg.topic)
-            entity_id = f'{self.create_entity_id(device_name)}_alarms'
-            _LOGGER.debug(f"alarm sensor entity_id is {entity_id}")
-
-            (target_sensor, is_new) = self.get_sensor(device_name, SensorType.ALARMS)
-            if is_new:
-                async_add_entities([target_sensor], True)
-            try:
-                target_sensor.process_message(msg)
-            except NoEntitySpecifiedError:
-                pass
-
+        # @callback
+        # def alarms_received(msg):
+        #     """Handle new MQTT alarm messages."""
+        #
+        #     _LOGGER.debug("Got message %s", msg)
+        #     device_name = self.device_name_from_topic(msg.topic)
+        #     entity_id = f'{self.create_entity_id(device_name)}_alarms'
+        #     _LOGGER.debug(f"alarm sensor entity_id is {entity_id}")
+        #
+        #     (target_sensor, is_new) = self.get_sensor(device_name, SleepAlarmSensor)
+        #     if is_new:
+        #         async_add_entities([target_sensor], True)
+        #     try:
+        #         target_sensor.process_message(msg)
+        #     except NoEntitySpecifiedError:
+        #         pass
         @callback
         def message_received(msg):
             """Handle new MQTT messages."""
@@ -246,7 +220,7 @@ class SleepAsAndroidInstance:
             entity_id = self.create_entity_id(device_name)
             _LOGGER.debug(f"sensor entity_id is {entity_id}")
 
-            (target_sensor, is_new) = self.get_sensor(device_name, SensorType.STATE)
+            (target_sensor, is_new) = self.get_sleep_sensor(device_name)
             if is_new:
                 async_add_entities([target_sensor], True)
             try:
@@ -255,10 +229,28 @@ class SleepAsAndroidInstance:
                 # ToDo:  async_write_ha_state() runs before async_add_entities, so entity have no entity_id yet
                 pass
 
-        async def subscribe_2022_03(
-            _hass: HomeAssistant, _state, _topic: dict
-        ) -> dict[str, EntitySubscription]:
+        @callback
+        def messages_received(msgs):
+            """Handle new MQTT alarm messages."""
+            _LOGGER.debug("Got message %s", msgs)
+            device_name = f'{self.device_name_from_topic(msgs.topic)}_alarm'
+            entity_id = self.create_entity_id(device_name)
+            _LOGGER.debug(f"sensor entity_id is {entity_id}")
+            for msg in loads(msgs.payload):
+                alarm_data = AlarmData(msg)
 
+                (target_sensor, is_new) = self.get_alarm_sensor(device_name, alarm_data)
+                if is_new:
+                    async_add_entities([target_sensor], True)
+                try:
+                    target_sensor.process_message(alarm_data)
+                except NoEntitySpecifiedError:
+                    # ToDo:  async_write_ha_state() runs before async_add_entities, so entity have no entity_id yet
+                    pass
+
+        async def subscribe_2022_03(
+                _hass: HomeAssistant, _state, _topic: dict
+        ) -> dict[str, EntitySubscription]:
             result = subscription.async_prepare_subscribe_topics(
                 hass=_hass,
                 new_state=_state,
@@ -272,7 +264,7 @@ class SleepAsAndroidInstance:
             return result
 
         async def subscribe_2021_07(
-            _hass: HomeAssistant, _state, _topic: dict
+                _hass: HomeAssistant, _state, _topic: dict
         ) -> dict[str, EntitySubscription]:
             return await subscription.async_subscribe_topics(
                 hass=_hass, new_state=_state, topics=_topic
@@ -284,9 +276,9 @@ class SleepAsAndroidInstance:
                 "msg_callback": message_received,
                 "qos": self._config_entry.data["qos"],
             },
-            "alarm_topic": {
-                "topic": f"{self.topic_template}/alarms/+",
-                "msg_callback": alarms_received,
+            "json_attributes_topic": {
+                "topic": f"{self.topic_template}/alarms",
+                "msg_callback": messages_received,
                 "qos": self._config_entry.data["qos"],
             },
         }
@@ -311,26 +303,43 @@ class SleepAsAndroidInstance:
         else:
             _LOGGER.critical(f"Could not subscribe to topic {self.topic_template}")
 
-    def get_sensor(self, sensor_name: str, type: SensorType) -> Tuple[SleepAsAndroidBaseSensor, bool]:
-        """Get sensor by it's name.
+    def get_alarm_sensor(self, sensor_name: str, alarm_data: AlarmData) -> Tuple[SleepAlarmSensor, bool]:
 
-        If we have no such key in __sensors -- create new sensor
+        """Get sensor by its name.
+
+        If we have no such key in __sensors -- create new sensor.
 
         :param sensor_name: name of sensor
-        :return: (sensor with name "sensor_name", it it a new sensor)
-
+        :param sensor_class: the sensor type constructor
+        :return: (sensor with name "sensor_name", it is a new sensor)
         """
         try:
-            return self.__sensors[sensor_name], False
+            return self.__alarm_sensors[sensor_name], False
         except KeyError:
             _LOGGER.info("New device! Let's create sensor for %s", sensor_name)
-            if type == SensorType.STATE:
-                new_sensor = SleepAsAndroidSensor(
-                    self.hass, self._config_entry, sensor_name
-                )
-            elif type == SensorType.ALARMS:
-                new_sensor = SleepAsAndroidAlarmSensor(self.hass, self._config_entry, sensor_name)
-            self.__sensors[sensor_name] = new_sensor
+            new_sensor = SleepAlarmSensor(
+                self.hass, self._config_entry, sensor_name, alarm_data
+            )
+            self.__alarm_sensors[sensor_name] = new_sensor
+            return new_sensor, True
+
+    def get_sleep_sensor(self, sensor_name: str) -> Tuple[SleepTrackerSensor, bool]:
+        """Get sensor by its name.
+
+        If we have no such key in __sensors -- create new sensor.
+
+        :param sensor_name: name of sensor
+        :param sensor_class: the sensor type constructor
+        :return: (sensor with name "sensor_name", it is a new sensor)
+        """
+        try:
+            return self.__sleep_sensors[sensor_name], False
+        except KeyError:
+            _LOGGER.info("New device! Let's create sensor for %s", sensor_name)
+            new_sensor = SleepTrackerSensor(
+                self.hass, self._config_entry, sensor_name
+            )
+            self.__sleep_sensors[sensor_name] = new_sensor
             return new_sensor, True
 
     async def _get_version(self) -> None:
