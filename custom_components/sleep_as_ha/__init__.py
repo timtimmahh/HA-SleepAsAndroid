@@ -21,7 +21,7 @@ from .sleep_as_ha import SleepAsHAInstance
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR]
 
 
 async def async_setup(_hass: HomeAssistant, _config_entry: ConfigEntry):
