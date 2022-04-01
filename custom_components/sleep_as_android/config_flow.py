@@ -66,25 +66,26 @@ def create_schema(
                 ): int,
             }
         )
-    schema = schema.extend(
-        {
-            vol.Optional(CONF_ALARM_LABEL, default=""): cv.string,
-            vol.Required(CONF_ALARM_TIME, default=datetime.now().strftime(CONF_ALARM_TIME_FMT)):
-                cv.time,
-            vol.Required(CONF_ALARM_DATE, default=datetime.now().strftime(CONF_ALARM_DATE_FMT)):
-                vol.Datetime(CONF_ALARM_DATE_FMT),
-            vol.Required(CONF_ALARM_REPEAT, default=[]): cv.multi_select({
-                "Sunday": False,
-                "Monday": False,
-                "Tuesday": False,
-                "Wednesday": False,
-                "Thursday": False,
-                "Friday": False,
-                "Saturday": False,
-            }),
-            vol.Optional(CONF_ALARM_ADD_ANOTHER, default=False): cv.boolean
-        }
-    )
+    else:
+        schema = schema.extend(
+            {
+                vol.Optional(CONF_ALARM_LABEL, default=""): cv.string,
+                vol.Required(CONF_ALARM_TIME, default=datetime.now().strftime(CONF_ALARM_TIME_FMT)):
+                    cv.time,
+                vol.Required(CONF_ALARM_DATE, default=datetime.now().strftime(CONF_ALARM_DATE_FMT)):
+                    cv.date,
+                vol.Required(CONF_ALARM_REPEAT, default=["Sunday"]): cv.multi_select({
+                    "Sunday": False,
+                    "Monday": False,
+                    "Tuesday": False,
+                    "Wednesday": False,
+                    "Thursday": False,
+                    "Friday": False,
+                    "Saturday": False,
+                }),
+                vol.Optional(CONF_ALARM_ADD_ANOTHER, default=False): cv.boolean
+            }
+        )
     return schema
 
 
@@ -113,20 +114,26 @@ class SleepAsAndroidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_alarm(self, user_input: Optional[Dict[str, Any]] = None):
         """Second step in config flow to add alarms."""
+        errors: Dict[str, str] = {}
         if user_input is not None:
-            self.data[CONF_ALARMS].append({
-                "label": user_input[CONF_ALARM_LABEL],
-                "time": user_input[CONF_ALARM_TIME],
-                "date": user_input[CONF_ALARM_DATE],
-                "repeat": user_input[CONF_ALARM_REPEAT],
-            })
+            try:
+                self.data[CONF_ALARMS].append({
+                    "label": user_input.get(CONF_ALARM_LABEL, ""),
+                    "time": user_input[CONF_ALARM_TIME],
+                    "date": user_input[CONF_ALARM_DATE],
+                    "repeat": user_input.get(CONF_ALARM_REPEAT, []),
+                })
+            except:
+                errors['base'] = 'alarms'
 
             if user_input.get(CONF_ALARM_ADD_ANOTHER, False):
                 return await self.async_step_alarm()
 
             return self.async_create_entry(title=self.data["name"], data=self.data)
 
-        return self.async_show_form(step_id="alarm", data_schema=create_schema(None, step="alarm"))
+        return self.async_show_form(step_id="alarm", data_schema=create_schema(None,
+                                                                               step="alarm"),
+                                    errors=errors)
 
 
 class SleepAsAndroidOptionsFlow(config_entries.OptionsFlow):
