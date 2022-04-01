@@ -9,16 +9,6 @@
           "topic_template": "Topic at MQTT-server with Sleep As Android events",
           "qos": "Quality of service for MQTT"
         }
-      },
-      "alarm": {
-        "title": "Set new alarm for Sleep As Android",
-        "data": {
-          "label": "Alarm label",
-          "time": "Alarm time",
-          "date": "Alarm start date",
-          "repeat": "Alarm repeat days",
-          "add_another": "Add another alarm."
-        }
       }
     }
   },
@@ -30,6 +20,16 @@
           "name": "Name for sensor and events",
           "topic_template": "Topic at MQTT-server with Sleep As Android events",
           "qos": "Quality of service for MQTT"
+        }
+      },
+      "alarm": {
+        "title": "Set new alarm for Sleep As Android",
+        "data": {
+          "label": "Alarm label",
+          "time": "Alarm time",
+          "date": "Alarm start date",
+          "repeat": "Alarm repeat days",
+          "add_another": "Add another alarm."
         }
       }
     }

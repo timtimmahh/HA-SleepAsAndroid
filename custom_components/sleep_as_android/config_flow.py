@@ -92,7 +92,8 @@ def create_schema(
 class SleepAsAndroidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """First time set up flow."""
 
-    data: Optional[Dict[str, Any]]
+    def __init__(self) -> None:
+        self._config_entry: config_entries | None = None
 
     @staticmethod
     @callback
@@ -103,13 +104,40 @@ class SleepAsAndroidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input=None):
         """Handle a flow initialized by the user."""
         if user_input is not None:
-            self.data = user_input
-            self.data[CONF_ALARMS] = []
-            return await self.async_step_alarm()
-            # self.async_create_entry(title=user_input["name"], data=user_input)
+            # self.data = user_input
+            # self.data[CONF_ALARMS] = []
+            # return await self.async_step_alarm()
+            return self.async_create_entry(title=user_input["name"], data=user_input)
 
         return self.async_show_form(
             step_id="user", data_schema=create_schema(None, step="user")
+        )
+
+
+class SleepAsAndroidOptionsFlow(config_entries.OptionsFlow):
+    """Changing options flow."""
+
+    data: Dict[str, Any]
+
+    def __init__(self, config_entry):
+        """Initialize options flow."""
+        super().__init__()
+        self._config_entry = config_entry
+        self._entry_id = config_entry.entry_id
+
+    async def async_step_init(self, user_input=None):
+        """Manage the options."""
+        errors = {}
+        if user_input is not None:
+            self.data = user_input
+            self.data[CONF_ALARMS] = []
+            return await self.async_step_alarm()
+            #self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=create_schema(self._config_entry, step="init"),
+            errors=errors,
         )
 
     async def async_step_alarm(self, user_input: Optional[Dict[str, Any]] = None):
@@ -123,36 +151,15 @@ class SleepAsAndroidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "date": user_input[CONF_ALARM_DATE],
                     "repeat": user_input.get(CONF_ALARM_REPEAT, []),
                 })
-            except:
-                errors['base'] = 'alarms'
+            except Exception as err:
+                print(err)
 
             if user_input.get(CONF_ALARM_ADD_ANOTHER, False):
                 return await self.async_step_alarm()
 
-            return self.async_create_entry(title=self.data["name"], data=self.data)
+            return self.async_create_entry(title="",
+                                           data=self.data)
 
-        return self.async_show_form(step_id="alarm", data_schema=create_schema(None,
+        return self.async_show_form(step_id="alarm", data_schema=create_schema(self._config_entry,
                                                                                step="alarm"),
                                     errors=errors)
-
-
-class SleepAsAndroidOptionsFlow(config_entries.OptionsFlow):
-    """Changing options flow."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        super().__init__()
-        self._config_entry = config_entry
-        self._entry_id = config_entry.entry_id
-
-    async def async_step_init(self, user_input=None):
-        """Manage the options."""
-        errors = {}
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=create_schema(self._config_entry, step="init"),
-            errors=errors,
-        )
