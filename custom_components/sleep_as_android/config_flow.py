@@ -66,31 +66,32 @@ def create_schema(
                 ): int,
             }
         )
-    else:
-        schema = schema.extend(
-            {
-                vol.Optional(CONF_ALARM_LABEL, default=""): cv.string,
-                vol.Required(CONF_ALARM_TIME, default=datetime.now().strftime(CONF_ALARM_TIME_FMT)):
-                    cv.time,
-                vol.Required(CONF_ALARM_DATE, default=datetime.now().strftime(CONF_ALARM_DATE_FMT)):
-                    vol.Datetime(CONF_ALARM_DATE_FMT),
-                vol.Required(CONF_ALARM_REPEAT): cv.multi_select({
-                    "Sunday": False,
-                    "Monday": False,
-                    "Tuesday": False,
-                    "Wednesday": False,
-                    "Thursday": False,
-                    "Friday": False,
-                    "Saturday": False,
-                }),
-                vol.Optional(CONF_ALARM_ADD_ANOTHER): cv.boolean
-            }
-        )
+    schema = schema.extend(
+        {
+            vol.Optional(CONF_ALARM_LABEL, default=""): cv.string,
+            vol.Required(CONF_ALARM_TIME, default=datetime.now().strftime(CONF_ALARM_TIME_FMT)):
+                cv.time,
+            vol.Required(CONF_ALARM_DATE, default=datetime.now().strftime(CONF_ALARM_DATE_FMT)):
+                vol.Datetime(CONF_ALARM_DATE_FMT),
+            vol.Required(CONF_ALARM_REPEAT, default=[]): cv.multi_select({
+                "Sunday": False,
+                "Monday": False,
+                "Tuesday": False,
+                "Wednesday": False,
+                "Thursday": False,
+                "Friday": False,
+                "Saturday": False,
+            }),
+            vol.Optional(CONF_ALARM_ADD_ANOTHER, default=False): cv.boolean
+        }
+    )
     return schema
 
 
 class SleepAsAndroidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """First time set up flow."""
+
+    data: Optional[Dict[str, Any]]
 
     @staticmethod
     @callback
@@ -123,7 +124,7 @@ class SleepAsAndroidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if user_input.get(CONF_ALARM_ADD_ANOTHER, False):
                 return await self.async_step_alarm()
 
-            return self.async_create_entry(title=user_input["name"], data=self.data)
+            return self.async_create_entry(title=self.data["name"], data=self.data)
 
         return self.async_show_form(step_id="alarm", data_schema=create_schema(None, step="alarm"))
 
